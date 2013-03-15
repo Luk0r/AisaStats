@@ -1,0 +1,243 @@
+
+
+class Slice
+{
+public:
+	uint16_t samples, bands, imageStart;
+	std::vector<uint16_t> line;
+	std::vector< decltype(line) > oneSlice;
+
+	Slice(uint16_t samples_, uint16_t bands_, uint16_t imageStart_=0)
+	: samples{samples_ - imageStart_}, bands{bands_}, imageStart{imageStart_}
+	{
+		line.reserve(samples);
+		oneSlice.reserve(bands);
+		readData();
+	}
+
+private:
+	void readData(); // TODO
+};
+
+void Slice::readData()
+{
+	std::fstream()
+
+}
+
+struct Stats
+{
+	friend class SliceStats;
+	double min{0.0}, max{0.0}, mean{0.0}, stddev{0.0};
+	uint32_t count{0};
+
+private:
+	double stddev_sqr_sum{0.0};
+};
+
+struct SliceStats
+{
+	std::vector<Stats> sliceStats;
+
+	SliceStats(Slice const &);
+};
+
+
+SliceStats::SliceStats(Slice const & slice)
+{
+// calc stats per line (min, max, mean, stddev)
+	for ( auto const & x : slice.oneSlice)
+	{
+		Stats newStats;
+		uint32_t sumCounter{0};
+		double sum{0.0};
+
+
+		// mean
+		std::for_each(x.begin(), x.end(), [&]( decltype(*x.begin() ) & element){
+			if(element != 0)
+			{
+				++sumCounter;
+				sum += element;
+			}
+		}); // end lambda
+		newStats.count = sumCounter;
+		newStats.mean = sum/sumCounter;
+
+
+		// min
+		std::for_each(x.begin(), x.end(), [&]( decltype(*x.begin() ) & element){
+			if(element != 0 && element < newStats.min)
+			{
+				newStats.min = element;
+			}
+		}); // end lambda
+
+		// max
+		std::for_each(x.begin(), x.end(), [&](decltype(*x.begin() ) & element){
+			if(element != 0 && element > newStats.max)
+			{
+				newStats.max = element;
+			}
+		}); // end lambda
+
+		// stddev
+		double squared_stddev_sum = 0.0;
+		std::for_each(x.begin(), x.end(), [&](double const element) //implicit conversion to double
+		{
+			squared_stddev_sum += (element - newStats.mean) * (element - newStats.mean);
+		});
+		newStats.stddev = std::sqrt(squared_stddev_sum / (x.size()) );
+		newStats.stddev_sqr_sum = squared_stddev_sum;
+		sliceStats.push_back(std::move(newStats));
+	}
+
+}
+
+
+
+class BasicHeader
+{
+public:
+	BasicHeader(std::string);
+
+	std::vector< std::pair<std::string, std::string> > vHheaderItemPairs;
+
+private:
+	enum Interleave{BIP, BIL, BSQ} interleave;
+	uint32_t samples;
+	uint32_t lines;
+	uint32_t bands;
+
+	uint8_t datatype;
+	uint8_t byte_order;
+
+	void readEnviHeader(std::string);
+
+
+};
+
+BasicHeader::BasicHeader(std::string inFileName)
+{
+	readEnviHeader(inFileName);
+
+	// fill basic header infos
+	for(auto x: vHheaderItemPairs)
+	{
+		if(x.first == "samples")
+			samples = std::stoi(x.second);
+		else if(x.first == "lines")
+			lines = std::stoi(x.second);
+		else if(x.first == "bands")
+			bands = std::stoi(x.second);
+		else if(x.first == "byte_order")
+			byte_order = std::stoi(x.second);
+		else if(x.first == "interleave")
+		{
+			if(x.second == "bil")
+				interleave = Interleave::BIL;
+			if(x.second == "bip")
+				interleave = Interleave::BIP;
+			if(x.second == "bsq")
+				interleave = Interleave::BSQ;
+		}
+		else if(x.first == "datatype")
+			datatype = std::stoi(x.second);
+
+	}
+}
+
+void BasicHeader::readEnviHeader(std::string inFileName)
+{
+	std::ifstream inFile(inFileName.c_str());
+
+	if(inFile.good())
+	{
+		std::stringstream strStream;
+		std::string line;
+		//std::vector< std::pair<std::string, std::string> > vHheaderItemPairs;
+
+		inFile.seekg( std::ios::beg);
+		while(std::getline(inFile, line))
+		{
+			strStream.str(line);
+			std::string checkString, buffer;
+
+			//if line containes "=", then put everything before to "first" and rest to "second"
+			std::size_t pos = line.find("=");
+			if(pos != std::string::npos)
+			{
+				std::string first {line.substr(0, pos)};
+				std::string second {line.substr(pos+1, line.size())};
+				vHheaderItemPairs.push_back(
+						std::pair<std::string, std::string>(std::move(first), std::move(second) ) );
+			}
+			else
+			{
+				if( !vHheaderItemPairs.empty() )
+					vHheaderItemPairs.back().second.append(line);
+			}
+		}
+
+
+#if DEBUG
+		for( auto const & x: vHheaderItemPairs)
+		{
+			std::cout << "|" << x.first << "|" << std::endl <<
+					"   " << "|" << x.second << "|" << std::endl << std::endl;
+		}
+#endif
+
+
+		for( auto& x: vHheaderItemPairs) // removes all spaces and "{" and "}"
+		{
+			x.first.erase(std::remove(x.first.begin(), x.first.end(), ' ' ),
+		    	x.first.end());
+
+			/*
+			 * THIS IS NOT WORKING, 17 seconds template errors in console, compiler bug ? gcc 4.7.2
+			 * doing workaround
+			 *
+			 *  x.second.erase(std::remove( x.second.begin(), x.second.end(), [](const char & element) {
+			 *	return (element == ' ');}),
+			 *	x.second.end());
+			 */
+		 	x.second.erase(std::remove(x.second.begin(), x.second.end(), ' ' ),
+		    		x.second.end());
+		 	x.second.erase(std::remove(x.second.begin(), x.second.end(), '{' ),
+		    		x.second.end());
+		 	x.second.erase(std::remove(x.second.begin(), x.second.end(), '}' ),
+		    		x.second.end());
+		}
+
+//#if DEBUG
+		for( auto const & x: vHheaderItemPairs)
+		{
+			std::cout << "|" << x.first << "|" << std::endl <<
+					"   " << "|" << x.second << "|" << std::endl << std::endl;
+		}
+//#endif
+	}
+
+}
+
+template<class T>
+class RasterCube
+{
+	//TODO go on here
+};
+
+
+int main(int argc, char **argv)
+{
+	if(argc < 2)
+	{
+		std::cout << "need filename as argument (.hdr) " << std::endl;
+		return 0;
+	}
+
+	BasicHeader header( std::string( argv[1])  );
+
+	char c;
+	std::cin >> c;
+};
