@@ -37,6 +37,9 @@ Wavelength = {
 
 int main(int argc, char **argv)
 {
+	//this is git testing
+
+	// haha now deleted and new this line
 
 
 	envi::CubeArray<int> cube(7, 5, 3);
