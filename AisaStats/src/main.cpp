@@ -43,6 +43,8 @@ int main(int argc, char **argv)
 
 	//test1 branch
 
+	//check this, added sth from UFZ
+
 
 	envi::CubeArray<int> cube(7, 5, 3);
 
